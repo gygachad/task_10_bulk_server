@@ -30,6 +30,7 @@ if (MSVC)
     target_compile_options(bulk_server PRIVATE
         /W4
     )
+    target_compile_definitions(bulk_server PRIVATE _WIN32_WINNT=0x0601)
 else ()
     target_compile_options(bulk_server PRIVATE
         -Wall -Wextra -pedantic -Werror

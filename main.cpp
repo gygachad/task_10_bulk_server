@@ -35,6 +35,53 @@ public:
     }
 };
 
+namespace str_tool
+{
+    // ("",  '.') -> [""]
+    // ("11", '.') -> ["11"]
+    // ("..", '.') -> ["", "", ""]
+    // ("11.", '.') -> ["11", ""]
+    // (".11", '.') -> ["", "11"]
+    // ("11.22", '.') -> ["11", "22"]
+    vector<std::string> split(const string& str, char d)
+    {
+        vector<std::string> r;
+
+        string::size_type start = 0;
+        string::size_type stop = str.find_first_of(d);
+
+        string substr;
+
+        while (stop != string::npos)
+        {
+            substr = str.substr(start, stop - start);
+            if(substr != "")
+                r.push_back(substr);
+
+            start = stop + 1;
+            stop = str.find_first_of(d, start);
+        }
+
+        substr = str.substr(start);
+        if(substr != "")
+            r.push_back(substr);
+
+        return r;
+    }
+
+    size_t replace_all(string& inout, string_view what, string_view with)
+    {
+        size_t count{};
+        for (string::size_type pos{};
+            inout.npos != (pos = inout.find(what.data(), pos, what.length()));
+            pos += with.length(), ++count)
+        {
+            inout.replace(pos, what.length(), with.data(), with.length());
+        }
+        return count;
+    }
+}
+
 struct bulk_client
 {
     using socket = asio::ip::tcp::socket;
@@ -65,18 +112,6 @@ class bulk_server
 
     bool m_started = false;
 
-    size_t replace_all(string& inout, string_view what, string_view with)
-    {
-        size_t count{};
-        for (string::size_type pos{};
-            inout.npos != (pos = inout.find(what.data(), pos, what.length()));
-            pos += with.length(), ++count) 
-        {
-            inout.replace(pos, what.length(), with.data(), with.length());
-        }
-        return count;
-    }
-
     void client_session(bulk_client_ptr client)
     {
         char recv_data[512];
@@ -98,32 +133,38 @@ class bulk_server
 
             if (buffer.find('\n') != string::npos)
             {
-                //Remove all escape characters from buffer
-                replace_all(buffer, "\r", "");
-                replace_all(buffer, "\n", "");
+                vector<string> cmd_vec = str_tool::split(buffer, '\n');
 
-                //log << buffer;
-                if (buffer == "{")
+                for (string cmd : cmd_vec)
                 {
-                    dynamic_counter++;
-                    dynamic = true;
+                    //Remove all escape characters from buffer
+                    str_tool::replace_all(cmd, "\r", "");
+                    str_tool::replace_all(cmd, "\n", "");
+
+                    log << cmd << "\r\n";
+
+                    if (cmd == "{")
+                    {
+                        dynamic_counter++;
+                        dynamic = true;
+                    }
+
+                    if (cmd == "}")
+                    {
+                        if (dynamic_counter > 0)
+                            dynamic_counter--;
+                    }
+
+                    //static cmd going to shared m_static_cmd processor
+                    //dynamic cmd going to client specific dynamic_cmd processor
+                    if (dynamic)
+                        async::receive(dynamic_cmd, cmd.c_str(), cmd.length());
+                    else
+                        async::receive(m_static_cmd, cmd.c_str(), cmd.length());
+
+                    if (dynamic_counter == 0)
+                        dynamic = false;
                 }
-
-                if (buffer == "}")
-                {
-                    if (dynamic_counter > 0)
-                        dynamic_counter--;
-                }
-
-                //static cmd going to shared m_static_cmd processor
-                //dynamic cmd going to client specific dynamic_cmd processor
-                if (dynamic)
-                    async::receive(dynamic_cmd, buffer.c_str(), buffer.length());
-                else
-                    async::receive(m_static_cmd, buffer.c_str(), buffer.length());
-
-                if (dynamic_counter == 0)
-                    dynamic = false;
 
                 buffer.clear();
             }

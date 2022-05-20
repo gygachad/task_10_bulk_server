@@ -257,7 +257,7 @@ int main(int argc, const char* argv[])
         desc.add_options()
             ("help,h", "This message")
             ("verbose,v", "Verbose output")
-            ("port", po::value<asio::ip::port_type>()->default_value(9000), "port")
+            ("port", po::value<uint16_t>()->default_value(9000), "port")
             ("bulk_size", po::value<size_t>()->default_value(5), "bulk_size");
 
 

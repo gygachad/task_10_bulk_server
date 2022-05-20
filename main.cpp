@@ -56,20 +56,35 @@ class bulk_server
     asio::ip::port_type m_port;
     size_t m_bulk_size;
 
-    async::handle_t m_static_proc;
+    async::handle_t m_static_cmd;
 
     asio::io_service m_service;
     boost::thread m_server_th;
     
     logger log;
 
+    bool m_started = false;
+
+    size_t replace_all(string& inout, string_view what, string_view with)
+    {
+        size_t count{};
+        for (string::size_type pos{};
+            inout.npos != (pos = inout.find(what.data(), pos, what.length()));
+            pos += with.length(), ++count) 
+        {
+            inout.replace(pos, what.length(), with.data(), with.length());
+        }
+        return count;
+    }
+
     void client_session(bulk_client_ptr client)
     {
         char recv_data[512];
         string buffer = "";
-
+        size_t dynamic_counter = 0;
+        bool dynamic = false;
         //create dynamic block??
-        async::handle_t m_dynamic_proc = async::connect(m_bulk_size);
+        async::handle_t dynamic_cmd = async::connect(m_bulk_size);
 
         while (true)
         {
@@ -83,8 +98,33 @@ class bulk_server
 
             if (buffer.find('\n') != -1)
             {
-                //cout << buffer;
-                log << buffer;
+                //Remove all escape characters from buffer
+                replace_all(buffer, "\r", "");
+                replace_all(buffer, "\n", "");
+
+                //log << buffer;
+                if (buffer == "{")
+                {
+                    dynamic_counter++;
+                    dynamic = true;
+                }
+
+                if (buffer == "}")
+                {
+                    if (dynamic_counter > 0)
+                        dynamic_counter--;
+                }
+
+                //static cmd going to shared m_static_cmd processor
+                //dynamic cmd going to client specific dynamic_cmd processor
+                if (dynamic)
+                    async::receive(dynamic_cmd, buffer.c_str(), buffer.length());
+                else
+                    async::receive(m_static_cmd, buffer.c_str(), buffer.length());
+
+                if (dynamic_counter == 0)
+                    dynamic = false;
+
                 buffer.clear();
             }
 
@@ -96,8 +136,8 @@ class bulk_server
                     m_client_list.remove(client);
                 }
 
-                if (m_dynamic_proc)
-                    async::disconnect(m_dynamic_proc);
+                if (dynamic_cmd)
+                    async::disconnect(dynamic_cmd);
 
                 log << "Client fell off\r\n";
                 return;
@@ -108,7 +148,7 @@ class bulk_server
 
     void accept_handler(const boost::system::error_code& error,
                         socket_ptr sock,
-                        boost::asio::ip::tcp::acceptor& acceptor)
+                        asio::ip::tcp::acceptor& acceptor)
     {
         if (error)
             return;
@@ -132,7 +172,7 @@ class bulk_server
         socket_ptr sock(new socket(m_service));
         
         acc.async_accept(*sock, boost::bind(&bulk_server::accept_handler,this,
-                                boost::asio::placeholders::error,
+                                asio::placeholders::error,
                                 sock,
                                 boost::ref(acc)));
     }
@@ -149,13 +189,16 @@ class bulk_server
 public:
     bulk_server(asio::ip::port_type port, size_t bulk_size) : m_port(port), m_bulk_size(bulk_size)
     {
-        m_static_proc = async::connect(bulk_size);
+        m_static_cmd = async::connect(bulk_size);
     }
 
     ~bulk_server()
     {
-        if (m_static_proc)
-            async::disconnect(m_static_proc);
+        if (m_started)
+            stop();
+
+        if (m_static_cmd)
+            async::disconnect(m_static_cmd);
     }
 
     void set_verbose_out(bool enable)
@@ -168,6 +211,8 @@ public:
 
     bool start()
     {
+        m_started = true;
+
         log << "Start server thread\r\n";
         m_server_th = boost::thread(&bulk_server::server_thread, this);
         return true;

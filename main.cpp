@@ -169,7 +169,7 @@ class bulk_server
                 buffer.clear();
             }
 
-            if (ec)
+            if (ec.value())
             {
                 //Client fell off
                 {
@@ -281,8 +281,12 @@ public:
             }
 
             client->m_sock->close();
+            boost::system::error_code ec = asio::error::connection_aborted;
+            client->m_sock->shutdown(socket::shutdown_send, ec);
             client->m_serve_th.join();
         }
+
+        m_started = false;
     }
 };
 

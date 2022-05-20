@@ -53,7 +53,7 @@ class bulk_server
     list<bulk_client_ptr> m_client_list;
     mutex m_list_lock;
 
-    asio::ip::port_type m_port;
+    uint16_t m_port;
     size_t m_bulk_size;
 
     async::handle_t m_static_cmd;
@@ -83,7 +83,7 @@ class bulk_server
         string buffer = "";
         size_t dynamic_counter = 0;
         bool dynamic = false;
-        //create dynamic block??
+
         async::handle_t dynamic_cmd = async::connect(m_bulk_size);
 
         while (true)
@@ -96,7 +96,7 @@ class bulk_server
             if (len)
                 buffer.append(recv_data, len);
 
-            if (buffer.find('\n') != -1)
+            if (buffer.find('\n') != string::npos)
             {
                 //Remove all escape characters from buffer
                 replace_all(buffer, "\r", "");
@@ -187,7 +187,7 @@ class bulk_server
     }
 
 public:
-    bulk_server(asio::ip::port_type port, size_t bulk_size) : m_port(port), m_bulk_size(bulk_size)
+    bulk_server(uint16_t port, size_t bulk_size) : m_port(port), m_bulk_size(bulk_size)
     {
         m_static_cmd = async::connect(bulk_size);
     }
@@ -288,7 +288,7 @@ int main(int argc, const char* argv[])
         std::cerr << e.what() << std::endl;
     }
 
-    asio::ip::port_type port = vm["port"].as<asio::ip::port_type>();
+    uint16_t port = vm["port"].as<uint16_t>();
     size_t bulk_size = vm["bulk_size"].as<size_t>();
 
     bulk_server srv(port, bulk_size);

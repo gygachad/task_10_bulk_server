@@ -279,12 +279,12 @@ public:
 
                 client = m_client_list.front();
             }
+            
             log << "Shutdown client\r\n";
             client->m_sock->cancel();
             client->m_sock->close();
             boost::system::error_code ec = asio::error::connection_aborted;
             client->m_sock->shutdown(socket::shutdown_both, ec);
-            client->m_sock->release(ec);
             client->m_serve_th.join();
         }
 
